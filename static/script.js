@@ -235,20 +235,25 @@ function createInfectionSummary(infectionData) {
     if (!infectionData) return '';
 
     let flagHtml = '';
-    if (infectionData.potential_flag) {
+    if (infectionData.potential_flag && infectionData.flag_evidence) {
+        const evidence = infectionData.flag_evidence;
         flagHtml = `
             <div class="flag-alert">
-                <h4>⚠️ Machine Infectée (FLAG) Détectée ⚠️</h4>
-                <p class="flag-ip">IP: ${infectionData.potential_flag}</p>
-                ${infectionData.suspicious_patterns
-                    .filter(p => p.type === 'potential_flag_found')
-                    .map(pattern => `
-                        <div class="flag-details">
-                            <p><strong>Connexions:</strong> ${pattern.connections}</p>
-                            <p><strong>Données transférées:</strong> ${pattern.data_transferred} octets</p>
-                            <p><strong>Preuve:</strong> ${pattern.evidence}</p>
-                        </div>
-                    `).join('')}
+                <h4>🚨 FLAG DÉTECTÉ 🚨</h4>
+                <p class="flag-ip">Machine Infectée: ${infectionData.potential_flag}</p>
+                <div class="flag-details">
+                    <p><strong>Score de détection:</strong> ${evidence.score}/7</p>
+                    <p><strong>Preuves d'infection:</strong></p>
+                    <ul>
+                        ${evidence.reasons.map(reason => `<li>${reason}</li>`).join('')}
+                    </ul>
+                    <p><strong>Première activité:</strong> ${new Date(evidence.timestamp_first * 1000).toLocaleString('fr-FR')}</p>
+                    <p><strong>Dernière activité:</strong> ${new Date(evidence.timestamp_last * 1000).toLocaleString('fr-FR')}</p>
+                    <p><strong>Durée de l'infection:</strong> ${Math.round(evidence.duration / 60)} minutes</p>
+                    <p><strong>Données transférées:</strong> ${formatBytes(evidence.data_transferred)}</p>
+                    <p><strong>Nombre de connexions:</strong> ${evidence.connection_count}</p>
+                    <p><strong>Destinations uniques:</strong> ${evidence.unique_destinations}</p>
+                </div>
             </div>
         `;
     }
@@ -287,6 +292,14 @@ function createInfectionSummary(infectionData) {
             </ul>
         </div>
     `;
+}
+
+function formatBytes(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 function createThreatCard(threat) {

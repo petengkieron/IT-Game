@@ -97,35 +97,30 @@ def analyze_suspicious_connections(packets):
         'infected_machines': [],
         'malicious_sources': [],
         'suspicious_patterns': [],
-        'potential_flag': None  # Pour stocker la machine flag
+        'potential_flag': None,
+        'infection_details': {}  # Nouveau dictionnaire pour les détails
     }
 
-    # Analyse approfondie des connexions
+    # Analyse des connexions
     connection_pairs = {}
-    connection_sequences = {}
-    
+    first_seen = {}
+    last_seen = {}
+    geo_data = {}
+
     for packet in packets:
         if IP in packet:
             src = packet[IP].src
             dst = packet[IP].dst
-            key = f"{src}->{dst}"
+            timestamp = packet.time
             
-            # Analyser les séquences de connexions
-            if src not in connection_sequences:
-                connection_sequences[src] = {
-                    'destinations': [],
-                    'timestamps': [],
-                    'connection_count': 0,
-                    'data_transferred': 0
-                }
-            
-            connection_sequences[src]['destinations'].append(dst)
-            connection_sequences[src]['timestamps'].append(packet.time)
-            connection_sequences[src]['connection_count'] += 1
-            if hasattr(packet, 'len'):
-                connection_sequences[src]['data_transferred'] += packet.len
+            # Enregistrer les timestamps pour chaque IP
+            for ip in [src, dst]:
+                if ip not in first_seen:
+                    first_seen[ip] = timestamp
+                last_seen[ip] = timestamp
 
             # Stocker les paires de connexions
+            key = f"{src}->{dst}"
             if key not in connection_pairs:
                 connection_pairs[key] = {
                     'count': 0,
@@ -141,42 +136,105 @@ def analyze_suspicious_connections(packets):
             if hasattr(packet, 'len'):
                 connection_pairs[key]['data_size'].append(packet.len)
 
-    # Analyser les modèles de comportement suspects
-    for src, data in connection_sequences.items():
-        # Détecter les modèles de Command & Control (C&C)
-        if (len(set(data['destinations'])) < 3 and 
-            data['connection_count'] > 50 and 
-            data['data_transferred'] > 1000):
-            infection_data['potential_flag'] = src
-            infection_data['suspicious_patterns'].append({
-                'type': 'potential_flag_found',
-                'ip': src,
-                'connections': data['connection_count'],
-                'data_transferred': data['data_transferred'],
-                'evidence': 'Modèle de trafic correspondant à une infection'
-            })
+    # Pour chaque machine infectée, collecter les détails
+    for ip in infection_data['infected_machines']:
+        infection_data['infection_details'][ip] = {
+            'first_seen': first_seen.get(ip),
+            'last_seen': last_seen.get(ip),
+            'infection_duration': last_seen.get(ip) - first_seen.get(ip) if first_seen.get(ip) else 0,
+            'attacker': next((s for s in infection_data['malicious_sources'] 
+                            if any(p['source'] == s and p['destination'] == ip 
+                                for p in infection_data['suspicious_patterns'])), 'Unknown'),
+            'country': get_ip_country(ip),
+            'total_connections': sum(1 for p in infection_data['suspicious_patterns'] 
+                                   if p['destination'] == ip),
+            'attack_pattern': analyze_attack_pattern(ip, infection_data['suspicious_patterns'])
+        }
 
-    # Identifier les machines infectées
-    for pair, data in connection_pairs.items():
-        if data['count'] > 10:
-            # Calculer les intervalles entre les connexions
-            intervals = [data['timestamps'][i+1] - data['timestamps'][i] 
-                       for i in range(len(data['timestamps'])-1)]
+    # Analyse approfondie pour trouver le flag
+    potential_flags = {}
+    for packet in packets:
+        if IP in packet:
+            src = packet[IP].src
+            if src not in potential_flags:
+                potential_flags[src] = {
+                    'packet_count': 0,
+                    'unique_dst': set(),
+                    'timestamps': [],
+                    'data_size': 0,
+                    'port_patterns': Counter()
+                }
             
-            if intervals and sum(intervals)/len(intervals) < 0.1:
-                infection_data['suspicious_patterns'].append({
-                    'type': 'repetitive_connection',
-                    'source': data['source'],
-                    'destination': data['destination'],
-                    'count': data['count'],
-                    'avg_interval': sum(intervals)/len(intervals)
-                })
-                
-                if data['source'] == infection_data['potential_flag']:
-                    infection_data['infected_machines'].append(data['destination'])
-                    infection_data['malicious_sources'].append(data['source'])
+            potential_flags[src]['packet_count'] += 1
+            potential_flags[src]['unique_dst'].add(packet[IP].dst)
+            potential_flags[src]['timestamps'].append(packet.time)
+            if hasattr(packet, 'len'):
+                potential_flags[src]['data_size'] += packet.len
+            if hasattr(packet, 'dport'):
+                potential_flags[src]['port_patterns'][packet.dport] += 1
+
+    # Identifier le flag en utilisant des critères spécifiques
+    for ip, data in potential_flags.items():
+        score = 0
+        reasons = []
+
+        # Critère 1: Beaucoup de connexions vers peu de destinations
+        if len(data['unique_dst']) < 3 and data['packet_count'] > 50:
+            score += 3
+            reasons.append("Connexions répétitives vers destinations limitées")
+
+        # Critère 2: Modèle de ports suspects (ex: ports communs de malware)
+        suspicious_ports = [445, 135, 3389, 22, 4444, 8080]
+        if any(port in data['port_patterns'] for port in suspicious_ports):
+            score += 2
+            reasons.append("Utilisation de ports suspects")
+
+        # Critère 3: Intervalle régulier entre les paquets (bot-like)
+        if len(data['timestamps']) > 2:
+            intervals = [data['timestamps'][i+1] - data['timestamps'][i] 
+                        for i in range(len(data['timestamps'])-1)]
+            avg_interval = sum(intervals) / len(intervals)
+            if 0.1 < avg_interval < 1.0:  # Intervalle suspect
+                score += 2
+                reasons.append("Intervalle régulier entre les paquets")
+
+        # Si le score est suffisamment élevé, c'est probablement notre flag
+        if score >= 5:
+            infection_data['potential_flag'] = ip
+            infection_data['flag_evidence'] = {
+                'score': score,
+                'reasons': reasons,
+                'data_transferred': data['data_size'],
+                'connection_count': data['packet_count'],
+                'unique_destinations': len(data['unique_dst']),
+                'timestamp_first': min(data['timestamps']),
+                'timestamp_last': max(data['timestamps']),
+                'duration': max(data['timestamps']) - min(data['timestamps'])
+            }
 
     return infection_data
+
+def get_ip_country(ip):
+    try:
+        from geoip2 import database
+        reader = database.Reader('GeoLite2-Country.mmdb')
+        response = reader.country(ip)
+        return response.country.name
+    except:
+        return "Pays inconnu"
+
+def analyze_attack_pattern(ip, patterns):
+    relevant_patterns = [p for p in patterns if p['destination'] == ip]
+    if not relevant_patterns:
+        return "Inconnu"
+    
+    # Analyser le type d'attaque basé sur les modèles
+    if any(p['count'] > 100 for p in relevant_patterns):
+        return "Attaque par force brute"
+    elif any(p.get('data_transferred', 0) > 10000 for p in relevant_patterns):
+        return "Exfiltration de données"
+    else:
+        return "Connexions suspectes"
 
 def analyze_user_behavior(packets):
     user_data = {
