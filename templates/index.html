@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Tableau de Bord de Sécurité</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Tableau de Bord d'Analyse de Sécurité</h1>
+        </header>
+
+        <div class="upload-section">
+            <input type="file" id="pcapFile" accept=".pcap" class="file-input">
+            <button onclick="uploadFile()" class="btn">Télécharger & Analyser</button>
+            <button onclick="checkVirusTotal()" class="btn">Vérifier VirusTotal</button>
+            <button onclick="fetchPcapFromAPI()" class="btn">Récupérer PCAP</button>
+        </div>
+
+        <div class="results-section">
+            <div class="stats-panel">
+                <h2>Résultats d'Analyse</h2>
+                <div id="statistics"></div>
+            </div>
+            
+            <div class="threat-panel">
+                <h2>Analyse des Menaces</h2>
+                <div id="threatResults"></div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
