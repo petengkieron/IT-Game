@@ -12,10 +12,13 @@
         </header>
 
         <div class="upload-section">
-            <input type="file" id="pcapFile" accept=".pcap" class="file-input">
-            <button onclick="uploadFile()" class="btn">Télécharger & Analyser</button>
-            <button onclick="checkVirusTotal()" class="btn">Vérifier VirusTotal</button>
-            <button onclick="fetchPcapFromAPI()" class="btn">Récupérer PCAP</button>
+            <div class="buttons-row">
+                <div class="upload-group">
+                    <input type="file" id="pcapFile" accept=".pcap" class="file-input">
+                    <button onclick="uploadFile()" class="btn">Télécharger & Analyser</button>
+                </div>
+                <button onclick="fetchPcapFromAPI()" class="btn">Récupérer PCAP</button>
+            </div>
         </div>
 
         <div class="results-section">

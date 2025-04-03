@@ -19,72 +19,6 @@ function uploadFile() {
     .catch(error => console.error('Erreur:', error));
 }
 
-function checkVirusTotal() {
-    const statistics = document.getElementById('statistics');
-    const threatResults = document.getElementById('threatResults');
-    
-    // Vérifier si des résultats sont disponibles
-    if (!statistics.innerHTML) {
-        alert('Veuillez analyser un fichier PCAP d\'abord');
-        return;
-    }
-
-    // Récupérer toutes les IPs (source et destination)
-    const sourceIps = Array.from(statistics.querySelectorAll('.ip-address'))
-        .map(el => el.textContent);
-
-    if (sourceIps.length === 0) {
-        threatResults.innerHTML = '<p class="error">Aucune IP trouvée à analyser</p>';
-        return;
-    }
-
-    // Afficher un message de chargement avec compteur
-    threatResults.innerHTML = `
-        <div class="loading">
-            <p>Analyse des IPs avec VirusTotal...</p>
-            <p>Traitement de l\'IP: <span id="progress">0</span>/${sourceIps.length}</p>
-        </div>
-    `;
-
-    // Analyser les IPs une par une pour éviter les limites d'API
-    let processed = 0;
-    const results = [];
-
-    function analyzeNextIp(index) {
-        if (index >= sourceIps.length) {
-            displayFinalResults(results);
-            return;
-        }
-
-        const ip = sourceIps[index];
-        fetch('/check_ip', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ip: ip })
-        })
-        .then(response => response.json())
-        .then(data => {
-            processed++;
-            document.getElementById('progress').textContent = processed;
-            
-            if (!data.error) {
-                results.push(data);
-                displayThreatLevel(data);
-            }
-            
-            // Attendre 1 seconde avant la prochaine requête
-            setTimeout(() => analyzeNextIp(index + 1), 1000);
-        })
-        .catch(error => {
-            console.error('Erreur lors de la vérification de l\'IP:', error);
-            setTimeout(() => analyzeNextIp(index + 1), 1000);
-        });
-    }
-
-    // Démarrer l'analyse
-    analyzeNextIp(0);
-}
-
 function displayFinalResults(results) {
     const threatResults = document.getElementById('threatResults');
     if (results.length === 0) {
@@ -127,6 +61,41 @@ function displayResults(data) {
     statistics.innerHTML = `
         <div class="analysis-summary">
             <h3>Résumé de l'Analyse</h3>
+            
+            <!-- Section des Machines Suspectes et Infectées -->
+            <div class="critical-findings">
+                ${data.user_analysis?.suspicious_users?.length ? `
+                    <div class="suspicious-users-summary">
+                        <h4>⚠️ Utilisateurs Suspects Détectés (${data.user_analysis.suspicious_users.length})</h4>
+                        <ul class="suspicious-list">
+                            ${data.user_analysis.suspicious_users.map(user => `
+                                <li class="suspicious-item">
+                                    <div class="ip-info">
+                                        <strong>IP:</strong> ${user.ip}
+                                        <div class="reason">${user.reasons.join(', ')}</div>
+                                    </div>
+                                    <button onclick="quickCheckIp('${user.ip}')" class="quick-check-btn">
+                                        🔍 Vérifier
+                                    </button>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                ` : ''}
+                
+                ${data.infection_analysis?.potential_flag ? `
+                    <div class="flag-summary">
+                        <h4>🚨 Machine Infectée (FLAG)</h4>
+                        <div class="flag-details">
+                            <strong>IP:</strong> ${data.infection_analysis.potential_flag}
+                            <div class="infection-info">
+                                <span class="attack-source">Source de l'attaque: ${data.infection_analysis.malicious_sources[0] || 'Inconnue'}</span>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+
             <p><strong>Paquets Total:</strong> ${data.total_packets}</p>
             <p><strong>Analysé le:</strong> ${new Date().toLocaleString('fr-FR')}</p>
             
@@ -185,19 +154,7 @@ function displayResults(data) {
                     </ul>
                 </div>
                 
-                <div class="suspicious-users">
-                    <h4>Utilisateurs Suspects (${data.user_analysis.suspicious_users.length})</h4>
-                    <ul>
-                        ${data.user_analysis.suspicious_users.map(user => `
-                            <li class="user-suspicious">
-                                <strong>IP:</strong> ${user.ip}
-                                <br>
-                                <small>Raisons: ${user.reasons.join(', ')}</small>
-                            </li>
-                        `).join('')}
-                    </ul>
-                </div>
-            </div>
+               
         `;
     }
 
@@ -231,8 +188,54 @@ function displayResults(data) {
     }
 }
 
+function quickCheckIp(ip) {
+    const threatResults = document.getElementById('threatResults');
+    
+    threatResults.innerHTML = `
+        <div class="loading">
+            <p>Analyse de l'IP ${ip} avec VirusTotal...</p>
+        </div>
+    `;
+
+    fetch('/check_ip', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip: ip })
+    })
+    .then(response => response.json())
+    .then(data => {
+        displayThreatLevel(data);
+        threatResults.scrollIntoView({ behavior: 'smooth' });
+    })
+    .catch(error => {
+        console.error('Erreur:', error);
+        threatResults.innerHTML = '<p class="error">Erreur lors de l\'analyse</p>';
+    });
+}
+
 function createInfectionSummary(infectionData) {
     if (!infectionData) return '';
+
+    // Ajouter l'en-tête avec l'attaquant et la victime
+    let attackSummary = '';
+    if (infectionData.malicious_sources.length > 0 && infectionData.infected_machines.length > 0) {
+        attackSummary = `
+            <div class="attack-summary">
+                <h3>Résumé de l'Attaque</h3>
+                <div class="attack-flow">
+                    <div class="attacker">
+                        <h4>🚨 Machine Attaquante</h4>
+                        <p>${infectionData.malicious_sources[0]}</p>
+                    </div>
+                    <div class="attack-arrow">➔</div>
+                    <div class="victim">
+                        <h4>⚠️ Machine Victime</h4>
+                        <p>${infectionData.infected_machines[0]}</p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 
     let flagHtml = '';
     if (infectionData.potential_flag && infectionData.flag_evidence) {
@@ -260,6 +263,7 @@ function createInfectionSummary(infectionData) {
 
     return `
         <div class="infection-summary">
+            ${attackSummary}
             ${flagHtml}
             <h4>Sources Malveillantes Détectées</h4>
             <ul class="malicious-sources">
@@ -303,18 +307,26 @@ function formatBytes(bytes) {
 }
 
 function createThreatCard(threat) {
+    const threatLevel = threat.threat_level?.toLowerCase() || 'unknown';
     return `
-        <div class="threat-result">
-            <p><strong>IP:</strong> ${threat.ip}</p>
-            <p><strong>Niveau de Menace:</strong> ${translateThreatLevel(threat.threat_level)}</p>
-            <p><strong>Détections:</strong> ${threat.detections}</p>
-            ${threat.details ? `
-                <ul>
-                    <li>URLs Détectées: ${threat.details.detected_urls || 0}</li>
-                    <li>Échantillons Détectés: ${threat.details.detected_samples || 0}</li>
-                    <li>Pays: ${threat.details.country || 'Inconnu'}</li>
-                </ul>
-            ` : ''}
+        <div class="threat-result ${threatLevel}-threat">
+            <div class="threat-header">
+                <h4>IP: ${threat.ip}</h4>
+                <span class="threat-badge ${threatLevel}">
+                    ${translateThreatLevel(threat.threat_level)}
+                </span>
+            </div>
+            <div class="threat-details">
+                <p><strong>Détections:</strong> ${threat.detections}</p>
+                ${threat.details ? `
+                    <ul>
+                        <li>URLs Malveillantes: ${threat.details.detected_urls || 0}</li>
+                        <li>Échantillons Malveillants: ${threat.details.detected_samples || 0}</li>
+                        <li>Pays: ${threat.details.country || 'Inconnu'}</li>
+                    </ul>
+                ` : ''}
+            </div>
+            <div class="threat-indicator ${threatLevel}"></div>
         </div>
     `;
 }
@@ -331,13 +343,17 @@ function translateThreatLevel(level) {
 
 function displayThreatLevel(data) {
     const threatResults = document.getElementById('threatResults');
-    const threatClass = `threat-level-${(data.threat_level || 'unknown').toLowerCase()}`;
+    const threatLevel = data.threat_level?.toLowerCase() || 'unknown';
     
     const threatElement = document.createElement('div');
-    threatElement.className = 'threat-result';
+    threatElement.className = `threat-result ${threatLevel}`;
     threatElement.innerHTML = `
         <p><strong>IP:</strong> ${data.ip}</p>
-        <p><strong>Niveau de Menace:</strong> <span class="${threatClass}">${translateThreatLevel(data.threat_level)}</span></p>
+        <p><strong>Niveau de Menace:</strong> 
+            <span class="threat-level-text ${threatLevel}">
+                ${translateThreatLevel(data.threat_level)}
+            </span>
+        </p>
         <p><strong>Total des Détections:</strong> ${data.detections}</p>
         ${data.details ? `
             <p><strong>Détails:</strong></p>
@@ -348,6 +364,7 @@ function displayThreatLevel(data) {
                 <li>Propriétaire AS: ${data.details.as_owner || 'Inconnu'}</li>
             </ul>
         ` : ''}
+        <div class="threat-bar ${threatLevel}"></div>
         <hr>
     `;
     
