@@ -244,6 +244,15 @@ hr {
     margin-top: 10px;
 }
 
+.flag-code {
+    background-color: #000;
+    color: #0f0;
+    font-family: monospace;
+    padding: 10px;
+    border-radius: 4px;
+    margin-top: 10px;
+}
+
 @keyframes pulse {
     0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }
     70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }

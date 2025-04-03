@@ -98,7 +98,8 @@ def analyze_suspicious_connections(packets):
         'malicious_sources': [],
         'suspicious_patterns': [],
         'potential_flag': None,
-        'infection_details': {}  # Nouveau dictionnaire pour les détails
+        'infection_details': {},
+        'flag_data': None  # Nouveau champ pour le format JSON attendu
     }
 
     # Analyse des connexions
@@ -212,7 +213,64 @@ def analyze_suspicious_connections(packets):
                 'duration': max(data['timestamps']) - min(data['timestamps'])
             }
 
+    # Si on trouve un flag, on ajoute les données au format attendu
+    if infection_data['potential_flag']:
+        # Rechercher les informations supplémentaires dans les paquets
+        user_data = extract_user_data(packets, infection_data['potential_flag'])
+        
+        # Créer le format JSON attendu
+        infection_data['flag_data'] = {
+            "user_id": user_data.get('user_id', 'unknown'),
+            "lines": [
+                user_data.get('mac_address', ''),
+                infection_data['potential_flag'],  # IP address
+                user_data.get('hostname', ''),
+                user_data.get('username', '')
+            ],
+            "flag": f"HACK{{{generate_flag_hash(infection_data['potential_flag'])}}}"
+        }
+
     return infection_data
+
+def extract_user_data(packets, target_ip):
+    """Extrait les informations supplémentaires des paquets pour une IP donnée"""
+    from scapy.layers.l2 import Ether
+    from scapy.layers.netbios import NBTDatagram
+    
+    user_data = {
+        'mac_address': '',
+        'hostname': '',
+        'username': '',
+        'user_id': ''
+    }
+    
+    for packet in packets:
+        if IP in packet and packet[IP].src == target_ip:
+            # Extraire l'adresse MAC
+            if Ether in packet:
+                user_data['mac_address'] = packet[Ether].src
+            
+            # Tenter d'extraire le hostname et username des paquets NetBIOS
+            if NBTDatagram in packet:
+                try:
+                    user_data['hostname'] = packet[NBTDatagram].NETBIOS_NAME.decode('utf-8').strip()
+                except:
+                    pass
+            
+            # Si on trouve toutes les infos, on peut sortir
+            if all(user_data.values()):
+                break
+    
+    # Générer un user_id si non trouvé
+    if not user_data['user_id']:
+        user_data['user_id'] = f"user_{target_ip.replace('.', '_')}"
+                
+    return user_data
+
+def generate_flag_hash(ip):
+    """Génère un hash unique pour le flag basé sur l'IP"""
+    import hashlib
+    return hashlib.md5(ip.encode()).hexdigest()[:12]
 
 def get_ip_country(ip):
     try:

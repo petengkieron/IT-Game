@@ -216,7 +216,27 @@ function quickCheckIp(ip) {
 function createInfectionSummary(infectionData) {
     if (!infectionData) return '';
 
-    // Ajouter l'en-tête avec l'attaquant et la victime
+    let flagHtml = '';
+    if (infectionData.flag_data) {
+        const flagData = infectionData.flag_data;
+        flagHtml = `
+            <div class="flag-alert">
+                <h4>🚨 FLAG DÉTECTÉ 🚨</h4>
+                <div class="flag-details">
+                    <p><strong>User ID:</strong> ${flagData.user_id}</p>
+                    <p><strong>Informations Machine:</strong></p>
+                    <ul>
+                        <li>MAC Address: ${flagData.lines[0]}</li>
+                        <li>IP Address: ${flagData.lines[1]}</li>
+                        <li>Hostname: ${flagData.lines[2]}</li>
+                        <li>Username: ${flagData.lines[3]}</li>
+                    </ul>
+                    <p class="flag-code"><strong>Flag:</strong> ${flagData.flag}</p>
+                </div>
+            </div>
+        `;
+    }
+
     let attackSummary = '';
     if (infectionData.malicious_sources.length > 0 && infectionData.infected_machines.length > 0) {
         attackSummary = `
@@ -232,30 +252,6 @@ function createInfectionSummary(infectionData) {
                         <h4>⚠️ Machine Victime</h4>
                         <p>${infectionData.infected_machines[0]}</p>
                     </div>
-                </div>
-            </div>
-        `;
-    }
-
-    let flagHtml = '';
-    if (infectionData.potential_flag && infectionData.flag_evidence) {
-        const evidence = infectionData.flag_evidence;
-        flagHtml = `
-            <div class="flag-alert">
-                <h4>🚨 FLAG DÉTECTÉ 🚨</h4>
-                <p class="flag-ip">Machine Infectée: ${infectionData.potential_flag}</p>
-                <div class="flag-details">
-                    <p><strong>Score de détection:</strong> ${evidence.score}/7</p>
-                    <p><strong>Preuves d'infection:</strong></p>
-                    <ul>
-                        ${evidence.reasons.map(reason => `<li>${reason}</li>`).join('')}
-                    </ul>
-                    <p><strong>Première activité:</strong> ${new Date(evidence.timestamp_first * 1000).toLocaleString('fr-FR')}</p>
-                    <p><strong>Dernière activité:</strong> ${new Date(evidence.timestamp_last * 1000).toLocaleString('fr-FR')}</p>
-                    <p><strong>Durée de l'infection:</strong> ${Math.round(evidence.duration / 60)} minutes</p>
-                    <p><strong>Données transférées:</strong> ${formatBytes(evidence.data_transferred)}</p>
-                    <p><strong>Nombre de connexions:</strong> ${evidence.connection_count}</p>
-                    <p><strong>Destinations uniques:</strong> ${evidence.unique_destinations}</p>
                 </div>
             </div>
         `;
